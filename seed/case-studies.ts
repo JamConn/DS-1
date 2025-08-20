@@ -2,7 +2,7 @@ import { CaseStudy, CaseStudyInstitution } from '../shared/types'
 
 export const caseStudies : CaseStudy[] = [
   { id: 1, version: "1", title: "AI in Healthcare", author: "Dr. Jane Smith", year: 2023, description: "Explores artificial intelligence in diagnostics and hospital management.", isPublished: true },
-  { id: 2, version: "1", title: "Sustainable Agriculture", author: "Prof. Liam O’Connor", year: 2024, description: "Investigates sustainable farming practices addressing food security challenges.", isPublished: false },
+  { id: 2, version: "1", title: "Sustainable Agriculture", author: "Prof. Liam OConnor", year: 2024, description: "Investigates sustainable farming practices addressing food security challenges.", isPublished: false },
   { id: 3, version: "1", title: "Blockchain in Supply Chains", author: "Sarah Lee", year: 2022, description: "Analyzes blockchain for transparency and traceability in supply chains.", isPublished: true },
   { id: 4, version: "1", title: "Remote Learning Platforms", author: "Michael Brown", year: 2021, description: "Evaluates the effectiveness of online platforms in higher education.", isPublished: true },
   { id: 5, version: "1", title: "Smart Cities Development", author: "Emily Carter", year: 2020, description: "Explores IoT technologies for urban infrastructure management.", isPublished: false },
