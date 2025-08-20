@@ -1,62 +1,57 @@
-import { Handler } from "aws-lambda";
-
+import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { CaseStudy } from "../shared/types";
 
 const ddbDocClient = createDDbDocClient();
 
-export const handler: Handler = async (event, context) => {
+export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
   try {
-    // Print Event
-    console.log("Event: ", JSON.stringify(event?.queryStringParameters));
-    const parameters = event?.queryStringParameters;
-    const movieId = parameters ? parseInt(parameters.movieId) : undefined;
+    console.log("[EVENT]", JSON.stringify(event));
+    const pathParameters = event?.pathParameters;
+    const caseStudyId = pathParameters?.caseStudyId
+      ? parseInt(pathParameters.caseStudyId)
+      : undefined;
 
-    if (!movieId) {
+    if (!caseStudyId) {
       return {
         statusCode: 404,
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ Message: "Missing movie Id" }),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "Missing case study Id" }),
       };
     }
 
     const commandOutput = await ddbDocClient.send(
       new GetCommand({
         TableName: process.env.TABLE_NAME,
-        Key: { id: movieId },
+        Key: { id: caseStudyId },
       })
     );
+
     console.log("GetCommand response: ", commandOutput);
+
     if (!commandOutput.Item) {
       return {
         statusCode: 404,
-        headers: {
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ Message: "Invalid movie Id" }),
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message: "Invalid case study Id" }),
       };
     }
+
     const body = {
-      data: commandOutput.Item,
+      data: commandOutput.Item as CaseStudy,
     };
 
-    // Return Response
     return {
       statusCode: 200,
-      headers: {
-        "content-type": "application/json",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     };
   } catch (error: any) {
     console.log(JSON.stringify(error));
     return {
       statusCode: 500,
-      headers: {
-        "content-type": "application/json",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ error }),
     };
   }
@@ -69,9 +64,7 @@ function createDDbDocClient() {
     removeUndefinedValues: true,
     convertClassInstanceToMap: true,
   };
-  const unmarshallOptions = {
-    wrapNumbers: false,
-  };
+  const unmarshallOptions = { wrapNumbers: false };
   const translateConfig = { marshallOptions, unmarshallOptions };
   return DynamoDBDocumentClient.from(ddbClient, translateConfig);
 }
