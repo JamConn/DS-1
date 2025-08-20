@@ -1,4 +1,4 @@
-import {CaseStudy} from '../shared/types'
+import { CaseStudy, CaseStudyInstitution } from '../shared/types'
 
 export const caseStudies : CaseStudy[] = [
   { id: 1, version: "1", title: "AI in Healthcare", author: "Dr. Jane Smith", year: 2023, description: "Explores artificial intelligence in diagnostics and hospital management.", isPublished: true },
@@ -24,3 +24,35 @@ export const caseStudies : CaseStudy[] = [
 ]
 
 
+export const institutions: CaseStudyInstitution[] = [
+  {
+    caseStudyId: 1,
+    institutionName: "St. Mary’s College",
+    location: "Dublin",
+    description: "Clinical pilot site for AI diagnostics."
+  },
+  {
+    caseStudyId: 1,
+    institutionName: "Northshore University",
+    location: "Glasgow",
+    description: "Partner for model validation."
+  },
+  {
+    caseStudyId: 2,
+    institutionName: "AgriTech Institute",
+    location: "Cork",
+    description: "Field trials in sustainable farming."
+  },
+  {
+    caseStudyId: 3,
+    institutionName: "SupplyChain Academy",
+    location: "London",
+    description: "Blockchain PoC collaboration."
+  },
+  {
+    caseStudyId: 3,
+    institutionName: "TechLabs",
+    location: "Leeds",
+    description: "Traceability data provider."
+  }
+]

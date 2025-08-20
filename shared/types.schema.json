@@ -36,6 +36,48 @@
                 "year"
             ],
             "type": "object"
+        },
+        "CaseStudyInstitution": {
+            "additionalProperties": false,
+            "properties": {
+                "caseStudyId": {
+                    "type": "number"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "institutionName": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "caseStudyId",
+                "description",
+                "institutionName",
+                "location"
+            ],
+            "type": "object"
+        },
+        "CaseStudyInstitutionQueryParams": {
+            "additionalProperties": false,
+            "properties": {
+                "caseStudyId": {
+                    "type": "string"
+                },
+                "institutionName": {
+                    "type": "string"
+                },
+                "location": {
+                    "type": "string"
+                }
+            },
+            "required": [
+                "caseStudyId"
+            ],
+            "type": "object"
         }
     }
 }
