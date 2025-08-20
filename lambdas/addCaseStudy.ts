@@ -1,7 +1,12 @@
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import Ajv from "ajv";
+import schema from "../shared/types.schema.json"; // JSON schema
 import { CaseStudy } from "../shared/types";
+
+const ajv = new Ajv();
+const isValidBodyParams = ajv.compile(schema.definitions["CaseStudy"] || {});
 
 const ddbDocClient = createDDbDocClient();
 
@@ -9,13 +14,25 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
   try {
     console.log("[EVENT]", JSON.stringify(event));
     const body: CaseStudy | undefined = event.body ? JSON.parse(event.body) : undefined;
+
     if (!body) {
       return {
         statusCode: 500,
-        headers: {
-          "content-type": "application/json",
-        },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ message: "Missing request body" }),
+      };
+    }
+
+    // --- Runtime JSON Schema validation ---
+    if (!isValidBodyParams(body)) {
+      return {
+        statusCode: 400,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          message: "Incorrect type. Must match the CaseStudy schema",
+          errors: isValidBodyParams.errors,
+          schema: schema.definitions["CaseStudy"],
+        }),
       };
     }
 
@@ -28,18 +45,14 @@ export const handler: APIGatewayProxyHandlerV2 = async (event, context) => {
 
     return {
       statusCode: 201,
-      headers: {
-        "content-type": "application/json",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ message: "Case study added" }),
     };
   } catch (error: any) {
     console.log(JSON.stringify(error));
     return {
       statusCode: 500,
-      headers: {
-        "content-type": "application/json",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({ error }),
     };
   }
