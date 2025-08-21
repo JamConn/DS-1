@@ -1,6 +1,6 @@
 import { APIGatewayProxyHandlerV2 } from "aws-lambda";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { TranslateClient, TranslateTextCommand } from "@aws-sdk/client-translate";
 
 const ddbDocClient = createDDbDocClient();
@@ -10,58 +10,68 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
   try {
     console.log("[EVENT]", JSON.stringify(event));
 
-
     const idStr = event.pathParameters?.caseStudyId;
-    if (!idStr) {
-      return response(400, { message: "Missing path parameter: caseStudyId" });
-    }
+    if (!idStr) return response(400, { message: "Missing path parameter: caseStudyId" });
 
     const id = Number(idStr);
-    if (Number.isNaN(id)) {
-      return response(400, { message: "caseStudyId must be a number" });
-    }
+    if (Number.isNaN(id)) return response(400, { message: "caseStudyId must be a number" });
 
     const lang = event.queryStringParameters?.language;
-    if (!lang) {
-      return response(400, { message: "Missing query parameter: language" });
-    }
+    if (!lang) return response(400, { message: "Missing query parameter: language" });
 
-    
     const getOut = await ddbDocClient.send(
-      new GetCommand({
-        TableName: process.env.TABLE_NAME,
-        Key: { id },
-      })
+      new GetCommand({ TableName: process.env.TABLE_NAME, Key: { id } })
     );
 
-    if (!getOut.Item) {
-      return response(404, { message: `CaseStudy ${id} not found` });
-    }
+    if (!getOut.Item) return response(404, { message: `CaseStudy ${id} not found` });
 
     const textAttr = process.env.TEXT_ATTRIBUTE || "description";
     const textToTranslate = (getOut.Item as any)[textAttr];
 
     if (typeof textToTranslate !== "string" || !textToTranslate.length) {
-      return response(500, {
-        message: `Item does not contain a non-empty string '${textAttr}' to translate`,
-      });
+      return response(500, { message: `Item does not contain a non-empty string '${textAttr}'` });
     }
 
+    const cachedTranslation = (getOut.Item.translations?.[lang]?.[textAttr]) as string | undefined;
 
-    const tr = await translateClient.send(
-      new TranslateTextCommand({
-        Text: textToTranslate,
-        SourceLanguageCode: "auto",
-        TargetLanguageCode: lang,
-      })
-    );
+    let translatedText = cachedTranslation;
+
+    if (!cachedTranslation) {
+      const tr = await translateClient.send(
+        new TranslateTextCommand({
+          Text: textToTranslate,
+          SourceLanguageCode: "auto",
+          TargetLanguageCode: lang,
+        })
+      );
+
+      translatedText = tr.TranslatedText;
+
+
+     await ddbDocClient.send(new UpdateCommand({
+       TableName: process.env.TABLE_NAME,
+       Key: { id },
+       UpdateExpression: `
+        SET translations = if_not_exists(translations, :emptyMap),
+         translations.#lang = if_not_exists(translations.#lang, :translationObj)
+        `,
+      ExpressionAttributeNames: { "#lang": lang },
+      ExpressionAttributeValues: {
+        ":emptyMap": {},
+        ":translationObj": {
+       [textAttr]: translatedText,
+      detectedSourceLanguage: tr.SourceLanguageCode,
+          },
+       },
+    }));
+    }
 
     const payload = {
       ...getOut.Item,
-      [`${textAttr}Translated`]: tr.TranslatedText,
+      [`${textAttr}Translated`]: translatedText,
       translation: {
         targetLanguage: lang,
-        detectedSourceLanguage: tr.SourceLanguageCode,
+        detectedSourceLanguage: cachedTranslation ? getOut.Item.translations[lang].detectedSourceLanguage : undefined,
       },
     };
 
@@ -74,11 +84,7 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
 
 function createDDbDocClient() {
   const ddbClient = new DynamoDBClient({ region: process.env.REGION });
-  const marshallOptions = {
-    convertEmptyValues: true,
-    removeUndefinedValues: true,
-    convertClassInstanceToMap: true,
-  };
+  const marshallOptions = { convertEmptyValues: true, removeUndefinedValues: true, convertClassInstanceToMap: true };
   const unmarshallOptions = { wrapNumbers: false };
   return DynamoDBDocumentClient.from(ddbClient, { marshallOptions, unmarshallOptions });
 }
@@ -88,9 +94,5 @@ function createTranslateClient() {
 }
 
 function response(statusCode: number, body: unknown) {
-  return {
-    statusCode,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  };
+  return { statusCode, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
 }

@@ -140,7 +140,7 @@ export class RestAPIStack extends cdk.Stack {
     caseStudiesTable.grantReadWriteData(newCaseStudyFn);
     caseStudiesTable.grantReadWriteData(updateCaseStudyFn);
     institutionsTable.grantReadData(getCaseStudyInstitutionFn);
-    caseStudiesTable.grantReadData(getCaseStudyTranslationFn);
+    caseStudiesTable.grantReadWriteData(getCaseStudyTranslationFn);
 
     getCaseStudyTranslationFn.addToRolePolicy(
       new iam.PolicyStatement({
