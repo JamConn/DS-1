@@ -7,19 +7,19 @@ import { Construct } from "constructs";
 import { generateBatch } from "../shared/util";
 import { caseStudies, institutions } from "../seed/case-studies";
 import * as apig from "aws-cdk-lib/aws-apigateway";
+import * as iam from "aws-cdk-lib/aws-iam";
 
 export class RestAPIStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // DynamoDB Table for CaseStudies
+    // DynamoDB Tables
     const caseStudiesTable = new dynamodb.Table(this, "CaseStudiesTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       tableName: "CaseStudies",
     });
-
 
     const institutionsTable = new dynamodb.Table(this, "InstitutionsTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
@@ -71,6 +71,17 @@ export class RestAPIStack extends cdk.Stack {
       },
     });
 
+    const updateCaseStudyFn = new lambdanode.NodejsFunction(this, "UpdateCaseStudyFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/updateCaseStudy.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: caseStudiesTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
 
     const getCaseStudyInstitutionFn = new lambdanode.NodejsFunction(
       this,
@@ -88,7 +99,24 @@ export class RestAPIStack extends cdk.Stack {
       }
     );
 
-    // Seed 
+    const getCaseStudyTranslationFn = new lambdanode.NodejsFunction(
+      this,
+      "GetCaseStudyTranslationFn",
+      {
+        architecture: lambda.Architecture.ARM_64,
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/getCaseStudyTranslation.ts`,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: caseStudiesTable.tableName,
+          REGION: "eu-west-1",
+          TEXT_ATTRIBUTE: "description",
+        },
+      }
+    );
+
+    // Seed
     new custom.AwsCustomResource(this, "CaseStudiesDdbInitData", {
       onCreate: {
         service: "DynamoDB",
@@ -96,13 +124,13 @@ export class RestAPIStack extends cdk.Stack {
         parameters: {
           RequestItems: {
             [caseStudiesTable.tableName]: generateBatch(caseStudies),
-            [institutionsTable.tableName]: generateBatch(institutions), 
+            [institutionsTable.tableName]: generateBatch(institutions),
           },
         },
         physicalResourceId: custom.PhysicalResourceId.of("CaseStudiesDdbInitData"),
       },
       policy: custom.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [caseStudiesTable.tableArn, institutionsTable.tableArn], 
+        resources: [caseStudiesTable.tableArn, institutionsTable.tableArn],
       }),
     });
 
@@ -110,7 +138,16 @@ export class RestAPIStack extends cdk.Stack {
     caseStudiesTable.grantReadData(getCaseStudyByIdFn);
     caseStudiesTable.grantReadData(getAllCaseStudiesFn);
     caseStudiesTable.grantReadWriteData(newCaseStudyFn);
-    institutionsTable.grantReadData(getCaseStudyInstitutionFn); 
+    caseStudiesTable.grantReadWriteData(updateCaseStudyFn);
+    institutionsTable.grantReadData(getCaseStudyInstitutionFn);
+    caseStudiesTable.grantReadData(getCaseStudyTranslationFn);
+
+    getCaseStudyTranslationFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["translate:TranslateText", "comprehend:DetectDominantLanguage"],
+        resources: ["*"],
+      })
+    );
 
     // REST API
     const api = new apig.RestApi(this, "CaseStudiesApi", {
@@ -119,11 +156,26 @@ export class RestAPIStack extends cdk.Stack {
         stageName: "dev",
       },
       defaultCorsPreflightOptions: {
-        allowHeaders: ["Content-Type", "X-Amz-Date"],
+        allowHeaders: ["Content-Type", "X-Amz-Date", "x-api-key"], //Api key included
         allowMethods: ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"],
         allowCredentials: true,
         allowOrigins: ["*"],
       },
+    });
+
+    const apiKey = api.addApiKey("CaseStudiesApiKey", {
+      apiKeyName: "CaseStudiesApiKey",
+    });
+
+    const usagePlan = api.addUsagePlan("CaseStudiesUsagePlan", {
+      name: "CaseStudiesUsagePlan",
+      throttle: { rateLimit: 10, burstLimit: 2 },
+      quota: { limit: 1000, period: apig.Period.DAY },
+    });
+
+    usagePlan.addApiKey(apiKey);
+    usagePlan.addApiStage({
+      stage: api.deploymentStage,
     });
 
     // endpoints
@@ -133,23 +185,39 @@ export class RestAPIStack extends cdk.Stack {
       new apig.LambdaIntegration(getAllCaseStudiesFn, { proxy: true })
     );
 
-    const caseStudyItem = caseStudiesEndpoint.addResource("item"); 
+    const caseStudyItem = caseStudiesEndpoint.addResource("item");
     const specificCaseStudyEndpoint = caseStudyItem.addResource("{caseStudyId}");
     specificCaseStudyEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getCaseStudyByIdFn, { proxy: true })
     );
 
-    caseStudiesEndpoint.addMethod(
-      "POST",
-      new apig.LambdaIntegration(newCaseStudyFn, { proxy: true })
+    // Protected endpoints
+    specificCaseStudyEndpoint.addMethod(
+      "PUT",
+      new apig.LambdaIntegration(updateCaseStudyFn, { proxy: true }),
+      { apiKeyRequired: true } 
     );
 
+
+    caseStudiesEndpoint.addMethod(
+      "POST",
+      new apig.LambdaIntegration(newCaseStudyFn, { proxy: true }),
+      { apiKeyRequired: true } 
+    );
+
+    // End of protected endpoints
 
     const institutionsEndpoint = caseStudiesEndpoint.addResource("institutions");
     institutionsEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getCaseStudyInstitutionFn, { proxy: true })
+    );
+
+    const translationEndpoint = specificCaseStudyEndpoint.addResource("translation");
+    translationEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getCaseStudyTranslationFn, { proxy: true })
     );
   }
 }
