@@ -20,7 +20,6 @@ export class RestAPIStack extends cdk.Stack {
       tableName: "CaseStudies",
     });
 
-
     const institutionsTable = new dynamodb.Table(this, "InstitutionsTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "caseStudyId", type: dynamodb.AttributeType.NUMBER },
@@ -72,6 +71,18 @@ export class RestAPIStack extends cdk.Stack {
     });
 
 
+    const updateCaseStudyFn = new lambdanode.NodejsFunction(this, "UpdateCaseStudyFn", {
+      architecture: lambda.Architecture.ARM_64,
+      runtime: lambda.Runtime.NODEJS_18_X,
+      entry: `${__dirname}/../lambdas/updateCaseStudy.ts`,
+      timeout: cdk.Duration.seconds(10),
+      memorySize: 128,
+      environment: {
+        TABLE_NAME: caseStudiesTable.tableName,
+        REGION: "eu-west-1",
+      },
+    });
+
     const getCaseStudyInstitutionFn = new lambdanode.NodejsFunction(
       this,
       "GetCaseStudyInstitutionFn",
@@ -88,7 +99,7 @@ export class RestAPIStack extends cdk.Stack {
       }
     );
 
-    // Seed 
+    // Seed
     new custom.AwsCustomResource(this, "CaseStudiesDdbInitData", {
       onCreate: {
         service: "DynamoDB",
@@ -96,13 +107,13 @@ export class RestAPIStack extends cdk.Stack {
         parameters: {
           RequestItems: {
             [caseStudiesTable.tableName]: generateBatch(caseStudies),
-            [institutionsTable.tableName]: generateBatch(institutions), 
+            [institutionsTable.tableName]: generateBatch(institutions),
           },
         },
         physicalResourceId: custom.PhysicalResourceId.of("CaseStudiesDdbInitData"),
       },
       policy: custom.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [caseStudiesTable.tableArn, institutionsTable.tableArn], 
+        resources: [caseStudiesTable.tableArn, institutionsTable.tableArn],
       }),
     });
 
@@ -110,7 +121,8 @@ export class RestAPIStack extends cdk.Stack {
     caseStudiesTable.grantReadData(getCaseStudyByIdFn);
     caseStudiesTable.grantReadData(getAllCaseStudiesFn);
     caseStudiesTable.grantReadWriteData(newCaseStudyFn);
-    institutionsTable.grantReadData(getCaseStudyInstitutionFn); 
+    caseStudiesTable.grantReadWriteData(updateCaseStudyFn);
+    institutionsTable.grantReadData(getCaseStudyInstitutionFn);
 
     // REST API
     const api = new apig.RestApi(this, "CaseStudiesApi", {
@@ -133,18 +145,22 @@ export class RestAPIStack extends cdk.Stack {
       new apig.LambdaIntegration(getAllCaseStudiesFn, { proxy: true })
     );
 
-    const caseStudyItem = caseStudiesEndpoint.addResource("item"); 
+    const caseStudyItem = caseStudiesEndpoint.addResource("item");
     const specificCaseStudyEndpoint = caseStudyItem.addResource("{caseStudyId}");
     specificCaseStudyEndpoint.addMethod(
       "GET",
       new apig.LambdaIntegration(getCaseStudyByIdFn, { proxy: true })
     );
 
+    specificCaseStudyEndpoint.addMethod(
+      "PUT",
+      new apig.LambdaIntegration(updateCaseStudyFn, { proxy: true })
+    );
+
     caseStudiesEndpoint.addMethod(
       "POST",
       new apig.LambdaIntegration(newCaseStudyFn, { proxy: true })
     );
-
 
     const institutionsEndpoint = caseStudiesEndpoint.addResource("institutions");
     institutionsEndpoint.addMethod(
