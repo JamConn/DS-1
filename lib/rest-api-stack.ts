@@ -7,6 +7,7 @@ import { Construct } from "constructs";
 import { generateBatch } from "../shared/util";
 import { caseStudies, institutions } from "../seed/case-studies";
 import * as apig from "aws-cdk-lib/aws-apigateway";
+import * as iam from "aws-cdk-lib/aws-iam";
 
 export class RestAPIStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
@@ -99,6 +100,23 @@ export class RestAPIStack extends cdk.Stack {
       }
     );
 
+    const getCaseStudyTranslationFn = new lambdanode.NodejsFunction(
+     this,
+      "GetCaseStudyTranslationFn",
+      {
+        architecture: lambda.Architecture.ARM_64,
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/getCaseStudyTranslation.ts`,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: caseStudiesTable.tableName,
+          REGION: "eu-west-1",
+        TEXT_ATTRIBUTE: "description", 
+        },
+      }
+    );
+
     // Seed
     new custom.AwsCustomResource(this, "CaseStudiesDdbInitData", {
       onCreate: {
@@ -123,6 +141,7 @@ export class RestAPIStack extends cdk.Stack {
     caseStudiesTable.grantReadWriteData(newCaseStudyFn);
     caseStudiesTable.grantReadWriteData(updateCaseStudyFn);
     institutionsTable.grantReadData(getCaseStudyInstitutionFn);
+    caseStudiesTable.grantReadData(getCaseStudyTranslationFn);
 
     // REST API
     const api = new apig.RestApi(this, "CaseStudiesApi", {
@@ -137,6 +156,13 @@ export class RestAPIStack extends cdk.Stack {
         allowOrigins: ["*"],
       },
     });
+
+    getCaseStudyTranslationFn.addToRolePolicy(
+      new iam.PolicyStatement({
+      actions: ["translate:TranslateText", "comprehend:DetectDominantLanguage"],
+      resources: ["*"],
+     })
+    );
 
     // endpoints
     const caseStudiesEndpoint = api.root.addResource("case-studies");
@@ -167,5 +193,12 @@ export class RestAPIStack extends cdk.Stack {
       "GET",
       new apig.LambdaIntegration(getCaseStudyInstitutionFn, { proxy: true })
     );
+
+    const translationEndpoint = specificCaseStudyEndpoint.addResource("translation");
+    translationEndpoint.addMethod(
+      "GET",
+     new apig.LambdaIntegration(getCaseStudyTranslationFn, { proxy: true })
+    );
+ 
   }
 }
