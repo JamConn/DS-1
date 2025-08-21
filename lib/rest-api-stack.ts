@@ -13,7 +13,7 @@ export class RestAPIStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-    // DynamoDB Table for CaseStudies
+    // DynamoDB Tables
     const caseStudiesTable = new dynamodb.Table(this, "CaseStudiesTable", {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
@@ -71,7 +71,6 @@ export class RestAPIStack extends cdk.Stack {
       },
     });
 
-
     const updateCaseStudyFn = new lambdanode.NodejsFunction(this, "UpdateCaseStudyFn", {
       architecture: lambda.Architecture.ARM_64,
       runtime: lambda.Runtime.NODEJS_18_X,
@@ -101,7 +100,7 @@ export class RestAPIStack extends cdk.Stack {
     );
 
     const getCaseStudyTranslationFn = new lambdanode.NodejsFunction(
-     this,
+      this,
       "GetCaseStudyTranslationFn",
       {
         architecture: lambda.Architecture.ARM_64,
@@ -112,7 +111,7 @@ export class RestAPIStack extends cdk.Stack {
         environment: {
           TABLE_NAME: caseStudiesTable.tableName,
           REGION: "eu-west-1",
-        TEXT_ATTRIBUTE: "description", 
+          TEXT_ATTRIBUTE: "description",
         },
       }
     );
@@ -143,6 +142,13 @@ export class RestAPIStack extends cdk.Stack {
     institutionsTable.grantReadData(getCaseStudyInstitutionFn);
     caseStudiesTable.grantReadData(getCaseStudyTranslationFn);
 
+    getCaseStudyTranslationFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["translate:TranslateText", "comprehend:DetectDominantLanguage"],
+        resources: ["*"],
+      })
+    );
+
     // REST API
     const api = new apig.RestApi(this, "CaseStudiesApi", {
       restApiName: "Case Studies Service",
@@ -150,19 +156,27 @@ export class RestAPIStack extends cdk.Stack {
         stageName: "dev",
       },
       defaultCorsPreflightOptions: {
-        allowHeaders: ["Content-Type", "X-Amz-Date"],
+        allowHeaders: ["Content-Type", "X-Amz-Date", "x-api-key"], //Api key included
         allowMethods: ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"],
         allowCredentials: true,
         allowOrigins: ["*"],
       },
     });
 
-    getCaseStudyTranslationFn.addToRolePolicy(
-      new iam.PolicyStatement({
-      actions: ["translate:TranslateText", "comprehend:DetectDominantLanguage"],
-      resources: ["*"],
-     })
-    );
+    const apiKey = api.addApiKey("CaseStudiesApiKey", {
+      apiKeyName: "CaseStudiesApiKey",
+    });
+
+    const usagePlan = api.addUsagePlan("CaseStudiesUsagePlan", {
+      name: "CaseStudiesUsagePlan",
+      throttle: { rateLimit: 10, burstLimit: 2 },
+      quota: { limit: 1000, period: apig.Period.DAY },
+    });
+
+    usagePlan.addApiKey(apiKey);
+    usagePlan.addApiStage({
+      stage: api.deploymentStage,
+    });
 
     // endpoints
     const caseStudiesEndpoint = api.root.addResource("case-studies");
@@ -178,15 +192,21 @@ export class RestAPIStack extends cdk.Stack {
       new apig.LambdaIntegration(getCaseStudyByIdFn, { proxy: true })
     );
 
+    // Protected endpoints
     specificCaseStudyEndpoint.addMethod(
       "PUT",
-      new apig.LambdaIntegration(updateCaseStudyFn, { proxy: true })
+      new apig.LambdaIntegration(updateCaseStudyFn, { proxy: true }),
+      { apiKeyRequired: true } 
     );
+
 
     caseStudiesEndpoint.addMethod(
       "POST",
-      new apig.LambdaIntegration(newCaseStudyFn, { proxy: true })
+      new apig.LambdaIntegration(newCaseStudyFn, { proxy: true }),
+      { apiKeyRequired: true } 
     );
+
+    // End of protected endpoints
 
     const institutionsEndpoint = caseStudiesEndpoint.addResource("institutions");
     institutionsEndpoint.addMethod(
@@ -197,8 +217,7 @@ export class RestAPIStack extends cdk.Stack {
     const translationEndpoint = specificCaseStudyEndpoint.addResource("translation");
     translationEndpoint.addMethod(
       "GET",
-     new apig.LambdaIntegration(getCaseStudyTranslationFn, { proxy: true })
+      new apig.LambdaIntegration(getCaseStudyTranslationFn, { proxy: true })
     );
- 
   }
 }
