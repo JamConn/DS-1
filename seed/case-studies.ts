@@ -1,8 +1,8 @@
-import {CaseStudy} from '../shared/types'
+import { CaseStudy, CaseStudyInstitution } from '../shared/types'
 
 export const caseStudies : CaseStudy[] = [
   { id: 1, version: "1", title: "AI in Healthcare", author: "Dr. Jane Smith", year: 2023, description: "Explores artificial intelligence in diagnostics and hospital management.", isPublished: true },
-  { id: 2, version: "1", title: "Sustainable Agriculture", author: "Prof. Liam O’Connor", year: 2024, description: "Investigates sustainable farming practices addressing food security challenges.", isPublished: false },
+  { id: 2, version: "1", title: "Sustainable Agriculture", author: "Prof. Liam OConnor", year: 2024, description: "Investigates sustainable farming practices addressing food security challenges.", isPublished: false },
   { id: 3, version: "1", title: "Blockchain in Supply Chains", author: "Sarah Lee", year: 2022, description: "Analyzes blockchain for transparency and traceability in supply chains.", isPublished: true },
   { id: 4, version: "1", title: "Remote Learning Platforms", author: "Michael Brown", year: 2021, description: "Evaluates the effectiveness of online platforms in higher education.", isPublished: true },
   { id: 5, version: "1", title: "Smart Cities Development", author: "Emily Carter", year: 2020, description: "Explores IoT technologies for urban infrastructure management.", isPublished: false },
@@ -24,3 +24,35 @@ export const caseStudies : CaseStudy[] = [
 ]
 
 
+export const institutions: CaseStudyInstitution[] = [
+  {
+    caseStudyId: 1,
+    institutionName: "St. Mary’s College",
+    location: "Dublin",
+    description: "Clinical pilot site for AI diagnostics."
+  },
+  {
+    caseStudyId: 1,
+    institutionName: "Northshore University",
+    location: "Glasgow",
+    description: "Partner for model validation."
+  },
+  {
+    caseStudyId: 2,
+    institutionName: "AgriTech Institute",
+    location: "Cork",
+    description: "Field trials in sustainable farming."
+  },
+  {
+    caseStudyId: 3,
+    institutionName: "SupplyChain Academy",
+    location: "London",
+    description: "Blockchain PoC collaboration."
+  },
+  {
+    caseStudyId: 3,
+    institutionName: "TechLabs",
+    location: "Leeds",
+    description: "Traceability data provider."
+  }
+]

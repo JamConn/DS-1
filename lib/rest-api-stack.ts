@@ -4,8 +4,8 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as custom from "aws-cdk-lib/custom-resources";
 import { Construct } from "constructs";
-import { generateCaseStudyBatch } from "../shared/util";
-import { caseStudies } from "../seed/case-studies";
+import { generateBatch } from "../shared/util";
+import { caseStudies, institutions } from "../seed/case-studies";
 import * as apig from "aws-cdk-lib/aws-apigateway";
 
 export class RestAPIStack extends cdk.Stack {
@@ -18,6 +18,20 @@ export class RestAPIStack extends cdk.Stack {
       partitionKey: { name: "id", type: dynamodb.AttributeType.NUMBER },
       removalPolicy: cdk.RemovalPolicy.DESTROY,
       tableName: "CaseStudies",
+    });
+
+
+    const institutionsTable = new dynamodb.Table(this, "InstitutionsTable", {
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      partitionKey: { name: "caseStudyId", type: dynamodb.AttributeType.NUMBER },
+      sortKey: { name: "institutionName", type: dynamodb.AttributeType.STRING },
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      tableName: "CaseStudyInstitutions",
+    });
+
+    institutionsTable.addLocalSecondaryIndex({
+      indexName: "locationIx",
+      sortKey: { name: "location", type: dynamodb.AttributeType.STRING },
     });
 
     // Lambda functions
@@ -57,20 +71,38 @@ export class RestAPIStack extends cdk.Stack {
       },
     });
 
-    // seeding logic added
+
+    const getCaseStudyInstitutionFn = new lambdanode.NodejsFunction(
+      this,
+      "GetCaseStudyInstitutionFn",
+      {
+        architecture: lambda.Architecture.ARM_64,
+        runtime: lambda.Runtime.NODEJS_18_X,
+        entry: `${__dirname}/../lambdas/getCaseStudyInstitution.ts`,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: institutionsTable.tableName,
+          REGION: "eu-west-1",
+        },
+      }
+    );
+
+    // Seed 
     new custom.AwsCustomResource(this, "CaseStudiesDdbInitData", {
       onCreate: {
         service: "DynamoDB",
         action: "batchWriteItem",
         parameters: {
           RequestItems: {
-            [caseStudiesTable.tableName]: generateCaseStudyBatch(caseStudies),
+            [caseStudiesTable.tableName]: generateBatch(caseStudies),
+            [institutionsTable.tableName]: generateBatch(institutions), 
           },
         },
         physicalResourceId: custom.PhysicalResourceId.of("CaseStudiesDdbInitData"),
       },
       policy: custom.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: [caseStudiesTable.tableArn],
+        resources: [caseStudiesTable.tableArn, institutionsTable.tableArn], 
       }),
     });
 
@@ -78,8 +110,9 @@ export class RestAPIStack extends cdk.Stack {
     caseStudiesTable.grantReadData(getCaseStudyByIdFn);
     caseStudiesTable.grantReadData(getAllCaseStudiesFn);
     caseStudiesTable.grantReadWriteData(newCaseStudyFn);
+    institutionsTable.grantReadData(getCaseStudyInstitutionFn); 
 
-    // API
+    // REST API
     const api = new apig.RestApi(this, "CaseStudiesApi", {
       restApiName: "Case Studies Service",
       deployOptions: {
@@ -100,16 +133,23 @@ export class RestAPIStack extends cdk.Stack {
       new apig.LambdaIntegration(getAllCaseStudiesFn, { proxy: true })
     );
 
-const caseStudyItem = caseStudiesEndpoint.addResource("item");  // added this extra level due to error with endpoint routing
-const specificCaseStudyEndpoint = caseStudyItem.addResource("{caseStudyId}");
-specificCaseStudyEndpoint.addMethod(
-  "GET",
-  new apig.LambdaIntegration(getCaseStudyByIdFn, { proxy: true })
-);
+    const caseStudyItem = caseStudiesEndpoint.addResource("item"); 
+    const specificCaseStudyEndpoint = caseStudyItem.addResource("{caseStudyId}");
+    specificCaseStudyEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getCaseStudyByIdFn, { proxy: true })
+    );
 
     caseStudiesEndpoint.addMethod(
       "POST",
       new apig.LambdaIntegration(newCaseStudyFn, { proxy: true })
+    );
+
+
+    const institutionsEndpoint = caseStudiesEndpoint.addResource("institutions");
+    institutionsEndpoint.addMethod(
+      "GET",
+      new apig.LambdaIntegration(getCaseStudyInstitutionFn, { proxy: true })
     );
   }
 }
