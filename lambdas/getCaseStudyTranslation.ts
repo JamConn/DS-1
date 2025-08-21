@@ -48,23 +48,27 @@ export const handler: APIGatewayProxyHandlerV2 = async (event) => {
       translatedText = tr.TranslatedText;
 
 
-     await ddbDocClient.send(new UpdateCommand({
+    await ddbDocClient.send(new UpdateCommand({
        TableName: process.env.TABLE_NAME,
        Key: { id },
-       UpdateExpression: `
-        SET translations = if_not_exists(translations, :emptyMap),
-         translations.#lang = if_not_exists(translations.#lang, :translationObj)
-        `,
+       UpdateExpression: "SET translations = if_not_exists(translations, :emptyMap)",
+       ExpressionAttributeValues: { ":emptyMap": {} }
+     }));
+
+
+    await ddbDocClient.send(new UpdateCommand({
+      TableName: process.env.TABLE_NAME,
+      Key: { id },
+      UpdateExpression: "SET translations.#lang = :translationObj",
       ExpressionAttributeNames: { "#lang": lang },
       ExpressionAttributeValues: {
-        ":emptyMap": {},
-        ":translationObj": {
-       [textAttr]: translatedText,
-      detectedSourceLanguage: tr.SourceLanguageCode,
-          },
-       },
+         ":translationObj": {
+        [textAttr]: translatedText,
+        detectedSourceLanguage: tr.SourceLanguageCode
+        }
+      }
     }));
-    }
+  }
 
     const payload = {
       ...getOut.Item,
